@@ -1,4 +1,6 @@
-# HELICAL-COMPRESSION-import math
+# HELICAL-COMPRESSION-
+
+import math
 import itertools
 import matplotlib.pyplot as plt
 
