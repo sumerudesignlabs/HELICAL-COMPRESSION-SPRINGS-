@@ -1,0 +1,190 @@
+import math
+import itertools
+import matplotlib.pyplot as plt
+
+# -----------------------------
+# MATERIAL DATABASE
+# -----------------------------
+materials = {
+    "music_wire": {"G": 79e9, "tau_allow": 690e6},
+    "stainless_steel": {"G": 77e9, "tau_allow": 520e6},
+    "oil_tempered": {"G": 78e9, "tau_allow": 600e6}
+}
+
+# -----------------------------
+# INPUT MODULE
+# -----------------------------
+def get_user_input():
+    print("\n--- TENSION SPRING DESIGN AI ---")
+    
+    F = float(input("Enter maximum load (N): "))
+    delta = float(input("Enter extension (mm): ")) / 1000
+    Fi = float(input("Enter initial tension (N): "))
+    
+    material = input("Material (music_wire / stainless_steel / oil_tempered): ")
+    if material not in materials:
+        material = "music_wire"
+    
+    fos = float(input("Factor of Safety (1.5–2): "))
+    
+    return F, delta, Fi, material, fos
+
+# -----------------------------
+# WAHL FACTOR
+# -----------------------------
+def wahl_factor(C):
+    return ((4*C - 1)/(4*C - 4)) + (0.615/C)
+
+# -----------------------------
+# DESIGN ENGINE
+# -----------------------------
+def generate_designs(F, delta, Fi, material, fos):
+    G = materials[material]["G"]
+    tau_allow = materials[material]["tau_allow"] / fos
+    
+    designs = []
+    
+    wire_diameters = [x/1000 for x in range(2, 16)]
+    spring_index = [4, 5, 6, 7, 8, 9]
+    
+    for d, C in itertools.product(wire_diameters, spring_index):
+        D = C * d
+        K = wahl_factor(C)
+        
+        # Max load includes initial tension
+        F_total = F
+        
+        # Stress
+        tau = (8 * F_total * D * K) / (math.pi * d**3)
+        if tau > tau_allow:
+            continue
+        
+        # Stiffness (important: subtract initial tension)
+        k = (F - Fi) / delta  # N/m
+        
+        # Coils
+        n = (G * d**4) / (8 * D**3 * k)
+        if n < 3 or n > 20:
+            continue
+        
+        n = math.ceil(n)
+        
+        # Recalculate stiffness
+        k_actual = (G * d**4) / (8 * D**3 * n)
+        k_N_per_mm = k_actual / 1000
+        
+        # Geometry
+        OD = D + d
+        ID = D - d
+        
+        designs.append({
+            "wire_diameter_mm": round(d*1000, 2),
+            "mean_diameter_mm": round(D*1000, 2),
+            "outer_diameter_mm": round(OD*1000, 2),
+            "inner_diameter_mm": round(ID*1000, 2),
+            "spring_index": C,
+            "active_coils": n,
+            "stiffness_N_per_mm": round(k_N_per_mm, 2),
+            "initial_tension_N": Fi,
+            "max_load_N": F,
+            "shear_stress_MPa": round(tau/1e6, 2)
+        })
+    
+    return designs
+
+# -----------------------------
+# RANKING
+# -----------------------------
+def rank_designs(designs):
+    return sorted(designs, key=lambda x: (
+        x["shear_stress_MPa"],
+        x["outer_diameter_mm"]
+    ))
+
+# -----------------------------
+# INDIVIDUAL PLOTS
+# -----------------------------
+def plot_individual(designs):
+    for i, d in enumerate(designs[:5]):
+        
+        k = d["stiffness_N_per_mm"]
+        Fi = d["initial_tension_N"]
+        max_extension = int((d["max_load_N"] - Fi) / k)
+        
+        x = list(range(0, max_extension + 1))
+        y = [Fi + k * xi for xi in x]
+        
+        plt.figure(i+1)
+        plt.plot(x, y)
+        
+        plt.xlabel("Extension (mm)")
+        plt.ylabel("Force (N)")
+        
+        plt.title(
+            f"Option {i+1}\n"
+            f"d={d['wire_diameter_mm']} mm, "
+            f"D={d['mean_diameter_mm']} mm, "
+            f"k={d['stiffness_N_per_mm']} N/mm"
+        )
+        
+        plt.grid()
+
+# -----------------------------
+# COMBINED PLOT
+# -----------------------------
+def plot_combined(designs):
+    plt.figure()
+    
+    for i, d in enumerate(designs[:5]):
+        k = d["stiffness_N_per_mm"]
+        Fi = d["initial_tension_N"]
+        max_extension = int((d["max_load_N"] - Fi) / k)
+        
+        x = list(range(0, max_extension + 1))
+        y = [Fi + k * xi for xi in x]
+        
+        plt.plot(x, y, label=f"Opt {i+1}")
+    
+    plt.xlabel("Extension (mm)")
+    plt.ylabel("Force (N)")
+    plt.title("Combined Force vs Extension")
+    plt.legend()
+    plt.grid()
+
+# -----------------------------
+# OUTPUT
+# -----------------------------
+def display_results(designs):
+    if not designs:
+        print("\n❌ No feasible designs found.")
+        return
+    
+    print("\n✅ TOP TENSION SPRING OPTIONS:\n")
+    
+    for i, d in enumerate(designs[:5]):
+        print(f"--- Option {i+1} ---")
+        for key, val in d.items():
+            print(f"{key}: {val}")
+        print("\n")
+    
+    print("📊 Plotting graphs...")
+    plot_individual(designs)
+    plot_combined(designs)
+    plt.show()
+
+# -----------------------------
+# MAIN
+# -----------------------------
+def main():
+    F, delta, Fi, material, fos = get_user_input()
+    
+    designs = generate_designs(F, delta, Fi, material, fos)
+    ranked = rank_designs(designs)
+    
+    display_results(ranked)
+
+# -----------------------------
+# RUN
+# -----------------------------
+if __name__ == "__main__":
+    main()
